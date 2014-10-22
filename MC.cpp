@@ -226,7 +226,9 @@ enum PlayerCameraState {
 };
 
 unsigned camera_state = 0;
-Transform camera;
+Transform camera(
+	Vec3f(33.755638, 49.220379, 72.422722),
+	Quat(-0.362434, 0.002032, 0.000791, 0.931997));
 bool rotating_camera = false;
 
 static Quat mouse_rotate(const Quat &in, float x, float y, float sensitivity)
@@ -299,6 +301,10 @@ void keyboardDown(unsigned char key, int x, int y) {
 		break;
 	case 'd':
 		camera_state |= PCS_MOVING_RIGHT;
+		break;
+	case 'p':
+		printf("pos: %f %f %f\n", VEC3(camera.translation));
+		printf("orient %f %f %f %f\n", VEC4(camera.orientation));
 		break;
 	}
 }
