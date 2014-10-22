@@ -40,6 +40,11 @@ static inline int offset_3d(const Vec3i &p, const Vec3i &size)
 	return (p.z * size.y + p.y) * size.x + p.x;
 }
 
+static inline int offset_3d_slab(const Vec3i &p, const Vec3i &size)
+{
+	return size.x * size.y * (p.z % 2) + p.y * size.x + p.x;
+}
+
 static void generate_voxels()
 {
 	Noise2D n2d(0);
@@ -138,7 +143,6 @@ static void generate_geometry()
 	for (int z = 0; z < 64; z++) {
 	for (int y = 0; y < 64; y++) {
 	for (int x = 0; x < 64; x++) {
-		const Vec3f p(x, y, z);
 		const float vs[8] = {
 			voxels[offset_3d({x,   y,   z},   Vec3i(65))],
 			voxels[offset_3d({x+1, y,   z},   Vec3i(65))],
@@ -164,9 +168,6 @@ static void generate_geometry()
 			continue;
 
 		int edge_indices[12];
-		for (int i = 0; i < 12; i++)
-			edge_indices[i] = -1;
-
 		auto do_edge = [&](int n_edge, float va, float vb, int axis, const Vec3f &base) {
 			if ((va < 0.0) == (vb < 0.0))
 				return;
@@ -191,6 +192,108 @@ static void generate_geometry()
 		do_edge(9,  vs[1], vs[5], 2, Vec3f(x+1, y,   z));
 		do_edge(10, vs[2], vs[6], 2, Vec3f(x,   y+1, z));
 		do_edge(11, vs[3], vs[7], 2, Vec3f(x+1, y+1, z));
+
+		const uint64_t config = marching_cube_tris[config_n];
+		const int n_triangles = config & 0xF;
+		const int n_indices = n_triangles * 3;
+		const int index_base = indices.length();
+
+		int offset = 4;
+		for (int i = 0; i < n_indices; i++) {
+			const int edge = (config >> offset) & 0xF;
+			indices.append(edge_indices[edge]);
+			offset += 4;
+		}
+		for (int i = 0; i < n_triangles; i++) {
+			triangle(
+				indices[index_base+i*3+0],
+				indices[index_base+i*3+1],
+				indices[index_base+i*3+2]);
+		}
+	}}}
+	for (Vertex &v : vertices)
+		v.normal = normalize(v.normal);
+}
+
+Vector<Vec3i> slab_inds(65*65*2);
+
+static void generate_geometry_smooth()
+{
+	for (int z = 0; z < 64; z++) {
+	for (int y = 0; y < 64; y++) {
+	for (int x = 0; x < 64; x++) {
+		const Vec3i p(x, y, z);
+		const float vs[8] = {
+			voxels[offset_3d({x,   y,   z},   Vec3i(65))],
+			voxels[offset_3d({x+1, y,   z},   Vec3i(65))],
+			voxels[offset_3d({x,   y+1, z},   Vec3i(65))],
+			voxels[offset_3d({x+1, y+1, z},   Vec3i(65))],
+			voxels[offset_3d({x,   y,   z+1}, Vec3i(65))],
+			voxels[offset_3d({x+1, y,   z+1}, Vec3i(65))],
+			voxels[offset_3d({x,   y+1, z+1}, Vec3i(65))],
+			voxels[offset_3d({x+1, y+1, z+1}, Vec3i(65))],
+		};
+
+		const int config_n =
+			((vs[0] < 0.0f) << 0) |
+			((vs[1] < 0.0f) << 1) |
+			((vs[2] < 0.0f) << 2) |
+			((vs[3] < 0.0f) << 3) |
+			((vs[4] < 0.0f) << 4) |
+			((vs[5] < 0.0f) << 5) |
+			((vs[6] < 0.0f) << 6) |
+			((vs[7] < 0.0f) << 7);
+
+		if (config_n == 0 || config_n == 255)
+			continue;
+
+		auto do_edge = [&](int n_edge, float va, float vb, int axis, const Vec3i &p) {
+			if ((va < 0.0) == (vb < 0.0))
+				return;
+
+			Vec3f v = ToVec3f(p);
+			v[axis] += va / (va - vb);
+			slab_inds[offset_3d_slab(p, Vec3i(65))][axis] = vertices.length();
+			vertices.append({v, Vec3f(0)});
+		};
+
+		if (p.y == 0 && p.z == 0)
+			do_edge(0,  vs[0], vs[1], 0, Vec3i(x, y,   z));
+		if (p.z == 0)
+			do_edge(1,  vs[2], vs[3], 0, Vec3i(x, y+1, z));
+		if (p.y == 0)
+			do_edge(2,  vs[4], vs[5], 0, Vec3i(x, y,   z+1));
+		do_edge(3,  vs[6], vs[7], 0, Vec3i(x, y+1, z+1));
+
+		if (p.x == 0 && p.z == 0)
+			do_edge(4,  vs[0], vs[2], 1, Vec3i(x,   y, z));
+		if (p.z == 0)
+			do_edge(5,  vs[1], vs[3], 1, Vec3i(x+1, y, z));
+		if (p.x == 0)
+			do_edge(6,  vs[4], vs[6], 1, Vec3i(x,   y, z+1));
+		do_edge(7,  vs[5], vs[7], 1, Vec3i(x+1, y, z+1));
+
+		if (p.x == 0 && p.y == 0)
+			do_edge(8,  vs[0], vs[4], 2, Vec3i(x,   y,   z));
+		if (p.y == 0)
+			do_edge(9,  vs[1], vs[5], 2, Vec3i(x+1, y,   z));
+		if (p.x == 0)
+			do_edge(10, vs[2], vs[6], 2, Vec3i(x,   y+1, z));
+		do_edge(11, vs[3], vs[7], 2, Vec3i(x+1, y+1, z));
+
+		int edge_indices[12];
+		edge_indices[0]  = slab_inds[offset_3d_slab({p.x, p.y,   p.z  }, Vec3i(65))].x;
+		edge_indices[1]  = slab_inds[offset_3d_slab({p.x, p.y+1, p.z  }, Vec3i(65))].x;
+		edge_indices[2]  = slab_inds[offset_3d_slab({p.x, p.y,   p.z+1}, Vec3i(65))].x;
+		edge_indices[3]  = slab_inds[offset_3d_slab({p.x, p.y+1, p.z+1}, Vec3i(65))].x;
+		edge_indices[4]  = slab_inds[offset_3d_slab({p.x,   p.y, p.z  }, Vec3i(65))].y;
+		edge_indices[5]  = slab_inds[offset_3d_slab({p.x+1, p.y, p.z  }, Vec3i(65))].y;
+		edge_indices[6]  = slab_inds[offset_3d_slab({p.x,   p.y, p.z+1}, Vec3i(65))].y;
+		edge_indices[7]  = slab_inds[offset_3d_slab({p.x+1, p.y, p.z+1}, Vec3i(65))].y;
+		edge_indices[8]  = slab_inds[offset_3d_slab({p.x,   p.y,   p.z}, Vec3i(65))].z;
+		edge_indices[9]  = slab_inds[offset_3d_slab({p.x+1, p.y,   p.z}, Vec3i(65))].z;
+		edge_indices[10] = slab_inds[offset_3d_slab({p.x,   p.y+1, p.z}, Vec3i(65))].z;
+		edge_indices[11] = slab_inds[offset_3d_slab({p.x+1, p.y+1, p.z}, Vec3i(65))].z;
 
 		const uint64_t config = marching_cube_tris[config_n];
 		const int n_triangles = config & 0xF;
@@ -281,7 +384,7 @@ static Vec3f get_walk_direction()
 // GLUT
 //----------------------------------------------------------------------------
 
-void keyboardDown(unsigned char key, int x, int y) {
+static void keyboardDown(unsigned char key, int x, int y) {
 	Vec3f look_dir, up, right;
 
 	switch (key) {
@@ -309,7 +412,7 @@ void keyboardDown(unsigned char key, int x, int y) {
 	}
 }
 
-void keyboardUp(unsigned char key, int x, int y) {
+static void keyboardUp(unsigned char key, int x, int y) {
 	switch (key) {
 	case 'w':
 		camera_state &= ~PCS_MOVING_FORWARD;
@@ -326,13 +429,13 @@ void keyboardUp(unsigned char key, int x, int y) {
 	}
 }
 
-void keyboardSpecialDown(int k, int x, int y) {
+static void keyboardSpecialDown(int k, int x, int y) {
 }
 
-void keyboardSpecialUp(int k, int x, int y) {
+static void keyboardSpecialUp(int k, int x, int y) {
 }
 
-void reshape(int width, int height)
+static void reshape(int width, int height)
 {
 	GLfloat fieldOfView = 90.0f;
 	glViewport(0, 0, width, height);
@@ -345,12 +448,12 @@ void reshape(int width, int height)
 	glLoadIdentity();
 }
 
-void mouseClick(int button, int state, int x, int y)
+static void mouseClick(int button, int state, int x, int y)
 {
 	rotating_camera = state == GLUT_DOWN;
 }
 
-void mouseMotion(int x, int y)
+static void mouseMotion(int x, int y)
 {
 	static int last_x = 0, last_y = 0;
 	const int dx = x - last_x;
@@ -362,7 +465,7 @@ void mouseMotion(int x, int y)
 		camera.orientation = mouse_rotate(camera.orientation, dx, dy, 0.25);
 }
 
-void draw()
+static void draw()
 {
 	static int last_time = 0;
 	const int current_time = glutGet(GLUT_ELAPSED_TIME);
@@ -396,12 +499,12 @@ void draw()
 	glutPostRedisplay();
 }
 
-void idle()
+static void idle()
 {
 }
 
 /* initialize OpenGL settings */
-void initGL(int width, int height)
+static void initGL(int width, int height)
 {
 	reshape(width, height);
 
@@ -413,6 +516,22 @@ void initGL(int width, int height)
 
 	glEnable(GL_LIGHTING);
 	glEnable(GL_LIGHT0);
+}
+
+static void menu(int choice)
+{
+	switch (choice) {
+	case 'f':
+		vertices.clear();
+		indices.clear();
+		generate_geometry();
+		break;
+	case 's':
+		vertices.clear();
+		indices.clear();
+		generate_geometry_smooth();
+		break;
+	}
 }
 
 int main(int argc, char** argv)
@@ -439,6 +558,11 @@ int main(int argc, char** argv)
 	glutDisplayFunc(draw);
 	glutIdleFunc(idle);
 	glutIgnoreKeyRepeat(true); // ignore keys held down
+
+	glutCreateMenu(menu);
+	glutAddMenuEntry("Flat Shading", 'f');
+	glutAddMenuEntry("Smooth Shading", 's');
+	glutAttachMenu(GLUT_RIGHT_BUTTON);
 
 	initGL(800, 600);
 

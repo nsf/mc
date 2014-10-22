@@ -194,8 +194,8 @@ _DEFINE_VEC3(int8_t,  Vec3b, Vec2b, _DEFINE_VEC3_INT_MEMBERS, _DEFINE_VEC3_INT_F
 _DEFINE_VEC3(uint16_t, Vec3us, Vec2us, _DEFINE_VEC3_INT_MEMBERS, _DEFINE_VEC3_INT_FUNCTIONS)
 
 
-static inline Vec3f ToVec3(const Vec3i &v) { return Vec3f(v.x, v.y, v.z); }
-static inline Vec3f ToVec3(const Vec3d &v) { return Vec3f(v.x, v.y, v.z); }
+static inline Vec3f ToVec3f(const Vec3i &v) { return Vec3f(v.x, v.y, v.z); }
+static inline Vec3f ToVec3f(const Vec3d &v) { return Vec3f(v.x, v.y, v.z); }
 static inline Vec3d ToVec3d(const Vec3i &v) { return Vec3d(v.x, v.y, v.z); }
 static inline Vec3d ToVec3d(const Vec3f &v) { return Vec3d(v.x, v.y, v.z); }
 static inline Vec3i ToVec3i(const Vec3f &v) { return Vec3i(v.x, v.y, v.z); }
