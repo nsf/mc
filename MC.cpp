@@ -646,6 +646,8 @@ static void initGL(int width, int height)
 
 static void menu(int choice)
 {
+	static bool wireframe = false;
+
 	switch (choice) {
 	case 'f':
 		vertices.clear();
@@ -661,6 +663,16 @@ static void menu(int choice)
 		vertices.clear();
 		indices.clear();
 		generate_geometry_naive_surface_nets();
+		break;
+	case 'w':
+		if (!wireframe) {
+			// enable
+			glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+		} else {
+			// disable
+			glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+		}
+		wireframe = !wireframe;
 		break;
 	}
 }
@@ -691,9 +703,10 @@ int main(int argc, char** argv)
 	glutIgnoreKeyRepeat(true); // ignore keys held down
 
 	glutCreateMenu(menu);
-	glutAddMenuEntry("Flat Shading", 'f');
-	glutAddMenuEntry("Smooth Shading", 's');
+	glutAddMenuEntry("Marching Cubes (flat shading)", 'f');
+	glutAddMenuEntry("Marching Cubes (smooth shading)", 's');
 	glutAddMenuEntry("Naive Surface Nets (smooth shading)", 'n');
+	glutAddMenuEntry("Toggle Wireframe", 'w');
 	glutAttachMenu(GLUT_RIGHT_BUTTON);
 
 	initGL(800, 600);
