@@ -31,9 +31,9 @@ struct Vertex {
 	Vec3f normal;
 };
 
-Vector<float> voxels(65*65*65);
-Vector<Vertex> vertices;
-Vector<int> indices;
+static Vector<float> voxels(65*65*65);
+static Vector<Vertex> vertices;
+static Vector<int> indices;
 
 static inline int offset_3d(const Vec3i &p, const Vec3i &size)
 {
@@ -215,10 +215,11 @@ static void generate_geometry()
 		v.normal = normalize(v.normal);
 }
 
-Vector<Vec3i> slab_inds(65*65*2);
 
 static void generate_geometry_smooth()
 {
+	static Vector<Vec3i> slab_inds(65*65*2);
+
 	for (int z = 0; z < 64; z++) {
 	for (int y = 0; y < 64; y++) {
 	for (int x = 0; x < 64; x++) {
@@ -317,6 +318,131 @@ static void generate_geometry_smooth()
 		v.normal = normalize(v.normal);
 }
 
+static void quad(bool flip, int ia, int ib, int ic, int id)
+{
+	if (flip)
+		std::swap(ib, id);
+
+	Vertex &va = vertices[ia];
+	Vertex &vb = vertices[ib];
+	Vertex &vc = vertices[ic];
+	Vertex &vd = vertices[id];
+
+	const Vec3f ab = va.position - vb.position;
+	const Vec3f cb = vc.position - vb.position;
+	const Vec3f n1 = cross(cb, ab);
+	va.normal += n1;
+	vb.normal += n1;
+	vc.normal += n1;
+
+	const Vec3f ac = va.position - vc.position;
+	const Vec3f dc = vd.position - vc.position;
+	const Vec3f n2 = cross(dc, ac);
+	va.normal += n2;
+	vc.normal += n2;
+	vd.normal += n2;
+
+	indices.append(ia);
+	indices.append(ib);
+	indices.append(ic);
+
+	indices.append(ia);
+	indices.append(ic);
+	indices.append(id);
+}
+
+
+static void generate_geometry_naive_surface_nets()
+{
+	static Vector<int> inds(65*65*2);
+
+	for (int z = 0; z < 64; z++) {
+	for (int y = 0; y < 64; y++) {
+	for (int x = 0; x < 64; x++) {
+		const Vec3i p(x, y, z);
+		const float vs[8] = {
+			voxels[offset_3d({x,   y,   z},   Vec3i(65))],
+			voxels[offset_3d({x+1, y,   z},   Vec3i(65))],
+			voxels[offset_3d({x,   y+1, z},   Vec3i(65))],
+			voxels[offset_3d({x+1, y+1, z},   Vec3i(65))],
+			voxels[offset_3d({x,   y,   z+1}, Vec3i(65))],
+			voxels[offset_3d({x+1, y,   z+1}, Vec3i(65))],
+			voxels[offset_3d({x,   y+1, z+1}, Vec3i(65))],
+			voxels[offset_3d({x+1, y+1, z+1}, Vec3i(65))],
+		};
+
+		const int config_n =
+			((vs[0] < 0.0f) << 0) |
+			((vs[1] < 0.0f) << 1) |
+			((vs[2] < 0.0f) << 2) |
+			((vs[3] < 0.0f) << 3) |
+			((vs[4] < 0.0f) << 4) |
+			((vs[5] < 0.0f) << 5) |
+			((vs[6] < 0.0f) << 6) |
+			((vs[7] < 0.0f) << 7);
+
+		if (config_n == 0 || config_n == 255)
+			continue;
+
+		Vec3f average(0);
+		int average_n = 0;
+		auto do_edge = [&](float va, float vb, int axis, const Vec3i &p) {
+			if ((va < 0.0) == (vb < 0.0))
+				return;
+
+			Vec3f v = ToVec3f(p);
+			v[axis] += va / (va - vb);
+			average += v;
+			average_n++;
+		};
+
+		do_edge(vs[0], vs[1], 0, Vec3i(x, y,     z));
+		do_edge(vs[2], vs[3], 0, Vec3i(x, y+1,   z));
+		do_edge(vs[4], vs[5], 0, Vec3i(x, y,     z+1));
+		do_edge(vs[6], vs[7], 0, Vec3i(x, y+1,   z+1));
+		do_edge(vs[0], vs[2], 1, Vec3i(x,   y,   z));
+		do_edge(vs[1], vs[3], 1, Vec3i(x+1, y,   z));
+		do_edge(vs[4], vs[6], 1, Vec3i(x,   y,   z+1));
+		do_edge(vs[5], vs[7], 1, Vec3i(x+1, y,   z+1));
+		do_edge(vs[0], vs[4], 2, Vec3i(x,   y,   z));
+		do_edge(vs[1], vs[5], 2, Vec3i(x+1, y,   z));
+		do_edge(vs[2], vs[6], 2, Vec3i(x,   y+1, z));
+		do_edge(vs[3], vs[7], 2, Vec3i(x+1, y+1, z));
+
+		const Vec3f v = average / Vec3f(average_n);
+		inds[offset_3d_slab(p, Vec3i(65))] = vertices.length();
+		vertices.append({v, Vec3f(0)});
+
+		const bool flip = vs[0] < 0.0f;
+		if (p.y > 0 && p.z > 0 && (vs[0] < 0.0f) != (vs[1] < 0.0f)) {
+			quad(flip,
+				inds[offset_3d_slab(Vec3i(p.x, p.y,   p.z),   Vec3i(65))],
+				inds[offset_3d_slab(Vec3i(p.x, p.y,   p.z-1), Vec3i(65))],
+				inds[offset_3d_slab(Vec3i(p.x, p.y-1, p.z-1), Vec3i(65))],
+				inds[offset_3d_slab(Vec3i(p.x, p.y-1, p.z),   Vec3i(65))]
+			);
+		}
+		if (p.x > 0 && p.z > 0 && (vs[0] < 0.0f) != (vs[2] < 0.0f)) {
+			quad(flip,
+				inds[offset_3d_slab(Vec3i(p.x,   p.y, p.z),   Vec3i(65))],
+				inds[offset_3d_slab(Vec3i(p.x-1, p.y, p.z),   Vec3i(65))],
+				inds[offset_3d_slab(Vec3i(p.x-1, p.y, p.z-1), Vec3i(65))],
+				inds[offset_3d_slab(Vec3i(p.x,   p.y, p.z-1), Vec3i(65))]
+			);
+		}
+		if (p.x > 0 && p.y > 0 && (vs[0] < 0.0f) != (vs[4] < 0.0f)) {
+			quad(flip,
+				inds[offset_3d_slab(Vec3i(p.x,   p.y,   p.z), Vec3i(65))],
+				inds[offset_3d_slab(Vec3i(p.x,   p.y-1, p.z), Vec3i(65))],
+				inds[offset_3d_slab(Vec3i(p.x-1, p.y-1, p.z), Vec3i(65))],
+				inds[offset_3d_slab(Vec3i(p.x-1, p.y,   p.z), Vec3i(65))]
+			);
+		}
+	}}}
+	for (Vertex &v : vertices)
+		v.normal = normalize(v.normal);
+}
+
 //----------------------------------------------------------------------------
 // Camera
 //----------------------------------------------------------------------------
@@ -328,11 +454,11 @@ enum PlayerCameraState {
 	PCS_MOVING_RIGHT    = 1 << 3,
 };
 
-unsigned camera_state = 0;
-Transform camera(
+static unsigned camera_state = 0;
+static Transform camera(
 	Vec3f(33.755638, 49.220379, 72.422722),
 	Quat(-0.362434, 0.002032, 0.000791, 0.931997));
-bool rotating_camera = false;
+static bool rotating_camera = false;
 
 static Quat mouse_rotate(const Quat &in, float x, float y, float sensitivity)
 {
@@ -531,6 +657,11 @@ static void menu(int choice)
 		indices.clear();
 		generate_geometry_smooth();
 		break;
+	case 'n':
+		vertices.clear();
+		indices.clear();
+		generate_geometry_naive_surface_nets();
+		break;
 	}
 }
 
@@ -562,6 +693,7 @@ int main(int argc, char** argv)
 	glutCreateMenu(menu);
 	glutAddMenuEntry("Flat Shading", 'f');
 	glutAddMenuEntry("Smooth Shading", 's');
+	glutAddMenuEntry("Naive Surface Nets (smooth shading)", 'n');
 	glutAttachMenu(GLUT_RIGHT_BUTTON);
 
 	initGL(800, 600);
