@@ -14,13 +14,21 @@
  *
  ***********************************************************/
 
-#include <GL/glut.h>
 #include <cstdio>
 #include <cstdint>
 #include "Math/Transform.h"
 #include "Math/Noise.h"
 #include "Core/Utils.h"
 #include "Core/Vector.h"
+
+#ifdef __APPLE__
+    #include <OpenGL/gl.h>
+    #include <OpenGL/glu.h>
+    #include <GLUT/glut.h>
+#elif
+    #include <GL/glut.h>
+#endif
+
 
 //----------------------------------------------------------------------------
 // Geometry
