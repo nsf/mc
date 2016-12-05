@@ -25,7 +25,7 @@
     #include <OpenGL/gl.h>
     #include <OpenGL/glu.h>
     #include <GLUT/glut.h>
-#elif
+#else
     #include <GL/glut.h>
 #endif
 
